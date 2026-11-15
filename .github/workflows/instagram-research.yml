@@ -38,7 +38,8 @@ jobs:
           POST_URL: ${{ inputs.instagram_url }}
         run: |
           mkdir -p downloads
-          parth-dl --json --output-dir downloads "$POST_URL" > download-result.json
+          parth-dl --json "$POST_URL" > download-result.json
+          parth-dl -P downloads "$POST_URL"
       - name: Upload retrieved files and metadata
         if: always()
         uses: actions/upload-artifact@v4
