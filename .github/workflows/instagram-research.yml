@@ -1,0 +1,51 @@
+name: Instagram public post research download
+
+on:
+  workflow_dispatch:
+    inputs:
+      instagram_url:
+        description: 'Public Instagram post/reel URL (no credentials)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install local parth-dl package
+        run: python -m pip install .
+      - name: Validate public Instagram URL
+        env:
+          POST_URL: ${{ inputs.instagram_url }}
+        run: |
+          python - <<'PY'
+          import os, urllib.parse
+          u = urllib.parse.urlparse(os.environ["POST_URL"])
+          assert u.scheme == "https" and u.hostname in ("www.instagram.com", "instagram.com")
+          assert u.path.startswith(("/p/", "/reel/"))
+          print("Public Instagram URL format validated")
+          PY
+      - name: Download available public media
+        env:
+          POST_URL: ${{ inputs.instagram_url }}
+        run: |
+          mkdir -p downloads
+          parth-dl --json --output-dir downloads "$POST_URL" > download-result.json
+      - name: Upload retrieved files and metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instagram-research-output
+          path: |
+            downloads/
+            download-result.json
+          if-no-files-found: warn
+          retention-days: 7
