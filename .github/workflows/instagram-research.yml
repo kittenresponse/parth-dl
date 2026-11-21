@@ -38,13 +38,14 @@ jobs:
               requests=glob.glob('instagram-requests/*.json')
               if not requests: raise SystemExit('No request file found')
               # Push-triggered request files use their commit change list, not arbitrary latest files.
-              # GitHub push payloads may omit commit file lists for app-originated writes.
-              # Each request is committed separately; select the request added by HEAD.
-              import subprocess
-              names=subprocess.check_output(['git','show','--pretty=format:','--name-only','HEAD'],text=True).splitlines()
-              names=[n for n in names if n.startswith('instagram-requests/') and n.endswith('.json')]
-              if not names: raise SystemExit('No Instagram request in HEAD commit; verify checkout')
-              raw=json.load(open(names[-1]))['instagram_url']
+              import urllib.request
+              api='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/commits/'+os.environ['GITHUB_SHA']
+              req=urllib.request.Request(api,headers={'Accept':'application/vnd.github+json','User-Agent':'Percept-Instagram-OSINT'})
+              with urllib.request.urlopen(req,timeout=30) as response:
+                  commit=json.load(response)
+              names=[f['filename'] for f in commit.get('files',[]) if f.get('status') in ('added','modified') and f['filename'].startswith('instagram-requests/') and f['filename'].endswith('.json')]
+              if len(names)!=1: raise SystemExit('Expected exactly one Instagram request in triggering commit: '+repr(names))
+              raw=json.load(open(names[0]))['instagram_url']
           u=urllib.parse.urlparse(raw)
           parts=[p for p in u.path.split('/') if p]
           if u.scheme!='https' or u.hostname not in ('instagram.com','www.instagram.com') or len(parts)!=2 or parts[0] not in ('p','reel') or not parts[1].replace('_','').replace('-','').isalnum():
