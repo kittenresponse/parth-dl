@@ -41,9 +41,9 @@ jobs:
               # GitHub push payloads may omit commit file lists for app-originated writes.
               # Each request is committed separately; select the request added by HEAD.
               import subprocess
-              names=subprocess.check_output(['git','diff-tree','--no-commit-id','--name-only','-r','HEAD'],text=True).splitlines()
+              names=subprocess.check_output(['git','show','--pretty=format:','--name-only','HEAD'],text=True).splitlines()
               names=[n for n in names if n.startswith('instagram-requests/') and n.endswith('.json')]
-              if not names: raise SystemExit('No Instagram request in HEAD commit')
+              if not names: raise SystemExit('No Instagram request in HEAD commit; verify checkout')
               raw=json.load(open(names[-1]))['instagram_url']
           u=urllib.parse.urlparse(raw)
           parts=[p for p in u.path.split('/') if p]
