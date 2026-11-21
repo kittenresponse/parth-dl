@@ -38,9 +38,12 @@ jobs:
               requests=glob.glob('instagram-requests/*.json')
               if not requests: raise SystemExit('No request file found')
               # Push-triggered request files use their commit change list, not arbitrary latest files.
-              changed=json.load(open(os.environ['GITHUB_EVENT_PATH'])).get('commits',[])
-              names=[n for commit in changed for n in (commit.get('added',[])+commit.get('modified',[])) if n.startswith('instagram-requests/') and n.endswith('.json')]
-              if not names: raise SystemExit('No Instagram request in push payload')
+              # GitHub push payloads may omit commit file lists for app-originated writes.
+              # Each request is committed separately; select the request added by HEAD.
+              import subprocess
+              names=subprocess.check_output(['git','diff-tree','--no-commit-id','--name-only','-r','HEAD'],text=True).splitlines()
+              names=[n for n in names if n.startswith('instagram-requests/') and n.endswith('.json')]
+              if not names: raise SystemExit('No Instagram request in HEAD commit')
               raw=json.load(open(names[-1]))['instagram_url']
           u=urllib.parse.urlparse(raw)
           parts=[p for p in u.path.split('/') if p]
