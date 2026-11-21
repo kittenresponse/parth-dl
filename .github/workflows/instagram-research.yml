@@ -1,6 +1,9 @@
 name: Percept Instagram OSINT research and English translation
 
 on:
+  push:
+    paths:
+      - 'instagram-requests/*.json'
   workflow_dispatch:
     inputs:
       instagram_url:
@@ -25,10 +28,21 @@ jobs:
       - name: Validate and normalize URL
         env:
           POST_URL: ${{ inputs.instagram_url }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           python - <<'PY'
           import os,urllib.parse
-          u=urllib.parse.urlparse(os.environ['POST_URL'].strip())
+          import glob,json
+          raw=os.environ.get('POST_URL','').strip()
+          if os.environ.get('EVENT_NAME')=='push':
+              requests=glob.glob('instagram-requests/*.json')
+              if not requests: raise SystemExit('No request file found')
+              # Push-triggered request files use their commit change list, not arbitrary latest files.
+              changed=json.load(open(os.environ['GITHUB_EVENT_PATH'])).get('commits',[])
+              names=[n for commit in changed for n in (commit.get('added',[])+commit.get('modified',[])) if n.startswith('instagram-requests/') and n.endswith('.json')]
+              if not names: raise SystemExit('No Instagram request in push payload')
+              raw=json.load(open(names[-1]))['instagram_url']
+          u=urllib.parse.urlparse(raw)
           parts=[p for p in u.path.split('/') if p]
           if u.scheme!='https' or u.hostname not in ('instagram.com','www.instagram.com') or len(parts)!=2 or parts[0] not in ('p','reel') or not parts[1].replace('_','').replace('-','').isalnum():
               raise SystemExit('Unsupported URL: only public Instagram /p/ or /reel/ links')
