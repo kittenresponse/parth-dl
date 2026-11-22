@@ -1,0 +1,41 @@
+name: Instagram public Reel diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install downloader
+        run: python -m pip install -e .
+      - name: Check public Reel without downloading media
+        shell: bash
+        run: |
+          set +e
+          python -m parth_dl.cli "https://www.instagram.com/reel/DgAlbBvDyUS/" --json --no-banner > reel_metadata.json 2> reel_error.log
+          status=$?
+          echo "Extractor exit code: $status"
+          if [ "$status" -eq 0 ]; then
+            python - <<'PY'
+          import json
+          with open('reel_metadata.json', encoding='utf-8') as f:
+              obj = json.load(f)
+          print('Metadata retrieval: SUCCESS')
+          print('Media type:', obj.get('type', 'unknown'))
+          print('Playable entries:', len(obj.get('entries') or []))
+          PY
+          else
+            echo "Metadata retrieval: FAILED"
+            # Output only a short diagnostic, never cookies, tokens or media URLs.
+            grep -E 'Invalid input|Rate limit error|Network error|Download failed|Download error|authentication|forbidden|not found|private|error' reel_error.log | head -n 8 || true
+          fi
+          exit "$status"
