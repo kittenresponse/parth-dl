@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'instagram-requests/*.json'
+  schedule:
+    - cron: '17 * * * *' # Recovery poll for request commits that do not trigger Actions
   workflow_dispatch:
     inputs:
       instagram_url:
@@ -34,6 +36,29 @@ jobs:
           import os,urllib.parse
           import glob,json
           raw=os.environ.get('POST_URL','').strip()
+          if os.environ.get('EVENT_NAME')=='schedule':
+              import datetime
+              import urllib.request
+              api='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/commits?path=instagram-requests%2F&per_page=1'
+              req=urllib.request.Request(api,headers={'Accept':'application/vnd.github+json','User-Agent':'Percept-Instagram-OSINT'})
+              with urllib.request.urlopen(req,timeout=30) as response:
+                  commits=json.load(response)
+              if not commits:
+                  raise SystemExit('No request commits found')
+              latest=commits[0]
+              timestamp=latest['commit']['committer']['date'].replace('Z','+00:00')
+              age=datetime.datetime.now(datetime.timezone.utc)-datetime.datetime.fromisoformat(timestamp)
+              if age.total_seconds()>5400:
+                  print('No recent Instagram request; recovery poll idle')
+                  with open(os.environ['GITHUB_ENV'],'a') as f: f.write('SKIP_RESEARCH=true\\n')
+                  raise SystemExit(0)
+              api='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/commits/'+latest['sha']
+              req=urllib.request.Request(api,headers={'Accept':'application/vnd.github+json','User-Agent':'Percept-Instagram-OSINT'})
+              with urllib.request.urlopen(req,timeout=30) as response:
+                  commit=json.load(response)
+              names=[f['filename'] for f in commit.get('files',[]) if f.get('status') in ('added','modified') and f['filename'].startswith('instagram-requests/') and f['filename'].endswith('.json')]
+              if len(names)!=1: raise SystemExit('Expected one recent request: '+repr(names))
+              raw=json.load(open(names[0],encoding='utf-8'))['instagram_url']
           if os.environ.get('EVENT_NAME')=='push':
               requests=glob.glob('instagram-requests/*.json')
               if not requests: raise SystemExit('No request file found')
@@ -55,6 +80,7 @@ jobs:
           print('Validated:',url)
           PY
       - name: Extract public metadata
+        if: env.SKIP_RESEARCH != 'true'
         env:
           TARGET_URL: ${{ env.CANONICAL_URL }}
         run: |
@@ -73,10 +99,12 @@ jobs:
           if not metadata: raise SystemExit('Public Instagram metadata unavailable; see result.json')
           PY
       - name: Download public Reel
+        if: env.SKIP_RESEARCH != 'true'
         env:
           TARGET_URL: ${{ env.CANONICAL_URL }}
         run: parth-dl -P osint-output "$TARGET_URL"
       - name: Transcribe and translate speech into English
+        if: env.SKIP_RESEARCH != 'true'
         run: |
           python -m pip install --disable-pip-version-check faster-whisper
           python - <<'PY'
