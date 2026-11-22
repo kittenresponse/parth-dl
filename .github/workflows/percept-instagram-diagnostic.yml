@@ -23,6 +23,7 @@ jobs:
       - name: Install local extractor
         run: python -m pip install .
       - name: Validate URL and inspect
+        id: extraction
         env:
           REEL_URL: ${{ inputs.reel_url || 'https://www.instagram.com/reel/DgCSYFsvCw5/' }}
         shell: bash
@@ -39,11 +40,13 @@ jobs:
           rc=$?
           set -e
           echo "extractor_exit_code=$rc" >> "$GITHUB_STEP_SUMMARY"
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           if [ "$rc" -ne 0 ]; then
             echo "Instagram extraction failed; review artifact for login wall, rate limiting or extractor incompatibility." >> "$GITHUB_STEP_SUMMARY"
           fi
-          exit 0
+          exit "$rc"
       - name: Upload diagnostic evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: instagram-diagnostic
