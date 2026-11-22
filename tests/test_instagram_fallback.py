@@ -20,12 +20,12 @@ class RetrievalTests(unittest.TestCase):
     def test_rejects_tiny_mp4(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / "tiny.mp4"
-            p.write_bytes(b"\\x00\\x00\\x00\\x18ftypisom")
+            p.write_bytes(b"\x00\x00\x00\x18ftypisom")
             self.assertFalse(valid_mp4(p))
     def test_accepts_header_and_size(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = pathlib.Path(tmp) / "valid.mp4"
-            p.write_bytes(b"\\x00\\x00\\x00\\x18ftypisom" + b"x" * MIN_BYTES)
+            p.write_bytes(b"\x00\x00\x00\x18ftypisom" + b"x" * MIN_BYTES)
             self.assertTrue(valid_mp4(p))
     @patch("instagram_fallback.subprocess.run")
     def test_all_fail_is_failure(self, run):
