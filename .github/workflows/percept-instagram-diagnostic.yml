@@ -46,12 +46,22 @@ jobs:
           data = json.loads(Path("diagnostic/result.json").read_text(encoding="utf-8"))
           if not isinstance(data, dict) or not data:
               raise ValueError("Empty or invalid Instagram metadata")
-          print("Nonempty metadata JSON verified")
+          def contains_media_url(obj):
+              if isinstance(obj, dict):
+                  if any(isinstance(obj.get(k), str) and obj[k].startswith("https://") for k in ("video_url", "media_url", "download_url", "display_url")):
+                      return True
+                  return any(contains_media_url(v) for v in obj.values())
+              if isinstance(obj, list):
+                  return any(contains_media_url(v) for v in obj)
+              return False
+          if not contains_media_url(data):
+              raise ValueError("No video or media URL found in extractor metadata")
+          print("Media URL found in extractor metadata")
           PY
           fi
           echo "extractor_exit_code=$rc" >> "$GITHUB_STEP_SUMMARY"
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
-          if [ "$rc" -eq 0 ]; then echo "Metadata JSON verified" >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ "$rc" -eq 0 ]; then echo "Media URL found; video download and transcript not yet verified" >> "$GITHUB_STEP_SUMMARY"; fi
           if [ "$rc" -ne 0 ]; then
             echo "Instagram extraction failed; review artifact for login wall, rate limiting or extractor incompatibility." >> "$GITHUB_STEP_SUMMARY"
           fi
