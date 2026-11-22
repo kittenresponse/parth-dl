@@ -1,5 +1,8 @@
 name: Percept Instagram Reel Diagnostic
 on:
+  push:
+    paths:
+      - '.github/workflows/percept-instagram-diagnostic.yml'
   workflow_dispatch:
     inputs:
       reel_url:
@@ -21,7 +24,7 @@ jobs:
         run: python -m pip install .
       - name: Validate URL and inspect
         env:
-          REEL_URL: ${{ inputs.reel_url }}
+          REEL_URL: ${{ inputs.reel_url || 'https://www.instagram.com/reel/DgCSYFsvCw5/' }}
         shell: bash
         run: |
           python - <<'PY'
