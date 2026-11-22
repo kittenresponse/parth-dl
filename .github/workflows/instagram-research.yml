@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install local Instagram downloader
-        run: python -m pip install --disable-pip-version-check .
+        run: python -m pip install --disable-pip-version-check . yt-dlp instaloader
       - name: Validate and normalize URL
         env:
           POST_URL: ${{ inputs.instagram_url }}
@@ -102,13 +102,13 @@ jobs:
           status='SUCCESS' if metadata else ('RATE_LIMITED' if p.returncode==4 else 'AUTH_OR_ACCESS_FAILURE' if ('authentication' in p.stderr.lower() or 'login' in p.stderr.lower() or '403' in p.stderr) else 'FAILED')
           report={'source_url':url,'checked_at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':status,'exit_code':p.returncode,'metadata':metadata,'diagnostic':p.stderr[-3000:]}
           with open('osint-output/result.json','w') as f: json.dump(report,f,ensure_ascii=False,indent=2)
-          if not metadata: raise SystemExit('Public Instagram metadata unavailable; see result.json')
+          if not metadata: print('Primary metadata extraction unavailable; attempting independent download fallbacks')
           PY
       - name: Download public Reel
         if: env.SKIP_RESEARCH != 'true'
         env:
           TARGET_URL: ${{ env.CANONICAL_URL }}
-        run: parth-dl -P osint-output "$TARGET_URL"
+        run: python scripts/instagram_fallback.py "$TARGET_URL" --output osint-output
       - name: Transcribe and translate speech into English
         if: env.SKIP_RESEARCH != 'true'
         run: |
@@ -123,7 +123,7 @@ jobs:
               return _av_open(*args,**kwargs)
           av.open=_compatible_open
           from faster_whisper import WhisperModel
-          files=glob.glob('osint-output/*.mp4')
+          files=glob.glob('osint-output/**/*.mp4',recursive=True) + glob.glob('osint-output/**/*.mkv',recursive=True)
           if not files:
               print('No video file: no audio transcription')
           else:
@@ -168,6 +168,7 @@ jobs:
           name: percept-instagram-osint-report
           path: |
             osint-output/result.json
+            osint-output/retrieval.json
             osint-output/report.json
             osint-output/report.md
             osint-output/transcript.json
