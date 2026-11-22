@@ -358,6 +358,46 @@ class MediaExtractor(BaseExtractor):
 
         return self._parse_media_item(product)
 
+    def _extract_from_shortcode_web_info(self, shortcode):
+        """Try the public shortcode web-info GraphQL response shape.
+
+        This query may be retired by Instagram; treat rejection as a normal
+        fallback, not as proof that the Reel is private or deleted.
+        """
+        self.log("Trying public shortcode web-info GraphQL extraction...")
+        homepage = self._make_request('https://www.instagram.com/')
+        csrf_token = self.cookies.get('csrftoken', '')
+        if not csrf_token:
+            self.log("Public web-info query unavailable: no CSRF token")
+            return None
+        headers = {
+            **self.API_HEADERS,
+            'X-CSRFToken': csrf_token,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': f'https://www.instagram.com/reel/{shortcode}/',
+        }
+        payload = {
+            'doc_id': '27128499623469141',
+            'variables': json.dumps({
+                'shortcode': shortcode,
+                '__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider': False,
+            }, separators=(',', ':')),
+        }
+        response = json.loads(self._make_request(
+            'https://www.instagram.com/graphql/query',
+            headers=headers, data=payload,
+        ))
+        if response.get('errors'):
+            self.log(f"Public web-info GraphQL rejected query: {response['errors']}")
+            return None
+        media = (response.get('data') or {}).get(
+            'xdt_api__v1__media__shortcode__web_info'
+        ) or {}
+        items = media.get('items') or []
+        if not items:
+            return None
+        return self._parse_media_item(items[0])
+
     def _extract_from_graphql(self, shortcode):
         """Extract using current GraphQL, with the legacy query as fallback."""
         try:
@@ -370,6 +410,15 @@ class MediaExtractor(BaseExtractor):
             # A rotating token/doc-id or endpoint-specific rejection should not
             # disable the older query, which occasionally still answers.
             self.log(f"Polaris GraphQL failed: {e}")
+
+        try:
+            result = self._extract_from_shortcode_web_info(shortcode)
+            if result and result.get('entries'):
+                return result
+        except RateLimitError:
+            raise
+        except (DownloadError, NetworkError, ValueError, TypeError, KeyError) as e:
+            self.log(f"Public shortcode web-info query failed: {e}")
 
         return self._extract_from_legacy_graphql(shortcode)
 
