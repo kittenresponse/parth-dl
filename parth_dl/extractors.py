@@ -83,6 +83,13 @@ class BaseExtractor:
             response = self.opener.open(req, timeout=30)
 
             content = response.read()
+            # An HTTP 200 can still be an Instagram login/interstitial page.
+            # Reject it before downstream JSON parsing obscures the cause.
+            response_type = (response.headers.get('Content-Type') or '').lower()
+            if decode and 'text/html' in response_type:
+                probe = content[:8192].lower()
+                if (b'login' in probe and (b'instagram' in probe or b'accounts/login' in probe)) and (b'log in' in probe or b'login_required' in probe or b'accounts/login' in probe):
+                    raise DownloadError("Instagram returned a login/interstitial page instead of public media data.")
 
             # Handle gzip compression
             if response.headers.get('Content-Encoding') == 'gzip':
@@ -103,12 +110,14 @@ class BaseExtractor:
                 return content
 
         except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise DownloadError("Instagram requires authentication (HTTP 401); anonymous extraction unavailable.")
             if e.code == 404:
                 raise DownloadError("Content not found. It might be private or deleted.")
             elif e.code == 429:
                 raise RateLimitError("Rate limited by Instagram. Please wait before retrying.")
             elif e.code == 403:
-                raise DownloadError("Access forbidden. Content might be private.")
+                raise DownloadError("Instagram denied anonymous access (HTTP 403); check login wall, session and endpoint compatibility.")
             else:
                 raise NetworkError(f"HTTP {e.code}: {e.reason}")
 
