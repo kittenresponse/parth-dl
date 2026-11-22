@@ -39,8 +39,19 @@ jobs:
           parth-dl --json "$REEL_URL" > diagnostic/result.json 2> diagnostic/error.log
           rc=$?
           set -e
+          if [ "$rc" -eq 0 ]; then
+            python - <<'PY' || rc=1
+          import json
+          from pathlib import Path
+          data = json.loads(Path("diagnostic/result.json").read_text(encoding="utf-8"))
+          if not isinstance(data, dict) or not data:
+              raise ValueError("Empty or invalid Instagram metadata")
+          print("Nonempty metadata JSON verified")
+          PY
+          fi
           echo "extractor_exit_code=$rc" >> "$GITHUB_STEP_SUMMARY"
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -eq 0 ]; then echo "Metadata JSON verified" >> "$GITHUB_STEP_SUMMARY"; fi
           if [ "$rc" -ne 0 ]; then
             echo "Instagram extraction failed; review artifact for login wall, rate limiting or extractor incompatibility." >> "$GITHUB_STEP_SUMMARY"
           fi
