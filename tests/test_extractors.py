@@ -114,6 +114,23 @@ class ShortcodeTest(unittest.TestCase):
 
         limiter.wait_if_needed.assert_called_once_with()
 
+    def test_login_interstitial_is_reported_explicitly(self):
+        extractor = BaseExtractor()
+        response = mock.Mock()
+        response.read.return_value = b'<html><title>Instagram</title><a href="/accounts/login/">Log in</a></html>'
+        response.headers = {'Content-Type': 'text/html'}
+        extractor.opener.open = mock.Mock(return_value=response)
+        with self.assertRaisesRegex(DownloadError, 'login/interstitial'):
+            extractor._make_request('https://www.instagram.com/reel/ABC/')
+
+    def test_normal_html_without_login_is_not_rejected(self):
+        extractor = BaseExtractor()
+        response = mock.Mock()
+        response.read.return_value = b'<html><title>Instagram public embed</title></html>'
+        response.headers = {'Content-Type': 'text/html'}
+        extractor.opener.open = mock.Mock(return_value=response)
+        self.assertIn('public embed', extractor._make_request('https://www.instagram.com/p/ABC/embed/'))
+
     def test_only_supported_standard_library_encoding_is_advertised(self):
         self.assertEqual(BaseExtractor.BASE_HEADERS['Accept-Encoding'], 'gzip')
 
