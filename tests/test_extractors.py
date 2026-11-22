@@ -131,6 +131,28 @@ class ShortcodeTest(unittest.TestCase):
         extractor.opener.open = mock.Mock(return_value=response)
         self.assertIn('public embed', extractor._make_request('https://www.instagram.com/p/ABC/embed/'))
 
+    def test_gzipped_login_page_is_classified_as_access_failure(self):
+        import gzip
+        extractor = BaseExtractor()
+        response = mock.Mock()
+        response.read.return_value = gzip.compress(
+            b'<html><a href="/accounts/login/">Log in</a></html>'
+        )
+        response.headers = {'Content-Type': 'text/html', 'Content-Encoding': 'gzip'}
+        extractor.opener.open = mock.Mock(return_value=response)
+        with self.assertRaisesRegex(DownloadError, 'authentication page'):
+            extractor._make_request('https://www.instagram.com/reel/ABC/')
+
+    def test_access_failure_is_not_misreported_as_network_failure(self):
+        extractor = BaseExtractor()
+        response = mock.Mock()
+        response.read.return_value = b'<html>login_required</html>'
+        response.headers = {'Content-Type': 'text/html'}
+        extractor.opener.open = mock.Mock(return_value=response)
+        with self.assertRaises(DownloadError) as caught:
+            extractor._make_request('https://www.instagram.com/reel/ABC/')
+        self.assertNotIsInstance(caught.exception, NetworkError)
+
     def test_only_supported_standard_library_encoding_is_advertised(self):
         self.assertEqual(BaseExtractor.BASE_HEADERS['Accept-Encoding'], 'gzip')
 
