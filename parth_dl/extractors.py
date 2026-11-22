@@ -82,19 +82,22 @@ class BaseExtractor:
             req = urllib.request.Request(url, data=data, headers=request_headers)
             response = self.opener.open(req, timeout=30)
 
-            content = response.read()
-            # An HTTP 200 can still be an Instagram login/interstitial page.
-            # Reject it before downstream JSON parsing obscures the cause.
-            response_type = (response.headers.get('Content-Type') or '').lower()
-            if decode and 'text/html' in response_type:
-                probe = content[:8192].lower()
-                if (b'login' in probe and (b'instagram' in probe or b'accounts/login' in probe)) and (b'log in' in probe or b'login_required' in probe or b'accounts/login' in probe):
-                    raise DownloadError("Instagram returned a login/interstitial page instead of public media data.")
+            with response:
+                content = response.read()
 
-            # Handle gzip compression
-            if response.headers.get('Content-Encoding') == 'gzip':
-                import gzip
-                content = gzip.decompress(content)
+                # Decompress before checking for HTML interstitials. Instagram
+                # may gzip login pages even when the request expects JSON.
+                if response.headers.get('Content-Encoding', '').lower() == 'gzip':
+                    import gzip
+                    content = gzip.decompress(content)
+
+                response_type = (response.headers.get('Content-Type') or '').lower()
+                if decode and 'text/html' in response_type:
+                    probe = content[:16384].lower()
+                    if b'accounts/login' in probe or b'login_required' in probe:
+                        raise DownloadError(
+                            "Instagram returned an authentication page instead of media data."
+                        )
 
             # Return decoded text or raw bytes
             if decode:
@@ -108,6 +111,9 @@ class BaseExtractor:
                 return content.decode('utf-8', errors='replace')
             else:
                 return content
+
+        except (DownloadError, RateLimitError, NetworkError):
+            raise
 
         except urllib.error.HTTPError as e:
             if e.code == 401:
