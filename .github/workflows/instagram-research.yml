@@ -11,6 +11,7 @@ on:
       instagram_url:
         description: 'Public Instagram post or Reel URL'
         required: true
+        default: 'https://www.instagram.com/reel/DgA6JfAAHPQ/'
         type: string
 
 permissions:
@@ -79,6 +80,11 @@ jobs:
           with open(os.environ['GITHUB_ENV'],'a') as f: f.write('CANONICAL_URL='+url+'\n')
           print('Validated:',url)
           PY
+      - name: Verify downloader CLI is available
+        if: env.SKIP_RESEARCH != 'true'
+        run: |
+          command -v parth-dl
+          parth-dl --version
       - name: Extract public metadata
         if: env.SKIP_RESEARCH != 'true'
         env:
@@ -93,7 +99,7 @@ jobs:
           if p.returncode==0:
               try: metadata=json.loads(p.stdout)
               except ValueError: pass
-          status='SUCCESS' if metadata else ('RATE_LIMITED' if p.returncode==4 else 'FAILED')
+          status='SUCCESS' if metadata else ('RATE_LIMITED' if p.returncode==4 else 'AUTH_OR_ACCESS_FAILURE' if ('authentication' in p.stderr.lower() or 'login' in p.stderr.lower() or '403' in p.stderr) else 'FAILED')
           report={'source_url':url,'checked_at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':status,'exit_code':p.returncode,'metadata':metadata,'diagnostic':p.stderr[-3000:]}
           with open('osint-output/result.json','w') as f: json.dump(report,f,ensure_ascii=False,indent=2)
           if not metadata: raise SystemExit('Public Instagram metadata unavailable; see result.json')
