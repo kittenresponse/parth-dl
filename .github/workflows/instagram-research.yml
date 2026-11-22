@@ -11,7 +11,7 @@ on:
       instagram_url:
         description: 'Public Instagram post or Reel URL'
         required: true
-        default: 'https://www.instagram.com/reel/DgA6JfAAHPQ/'
+        default: 'https://www.instagram.com/reel/DgApa9Iofqh/'
         type: string
 
 permissions:
@@ -51,7 +51,7 @@ jobs:
               age=datetime.datetime.now(datetime.timezone.utc)-datetime.datetime.fromisoformat(timestamp)
               if age.total_seconds()>5400:
                   print('No recent Instagram request; recovery poll idle')
-                  with open(os.environ['GITHUB_ENV'],'a') as f: f.write('SKIP_RESEARCH=true\\n')
+                  with open(os.environ['GITHUB_ENV'],'a') as f: f.write('SKIP_RESEARCH=true\n')
                   raise SystemExit(0)
               api='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/commits/'+latest['sha']
               req=urllib.request.Request(api,headers={'Accept':'application/vnd.github+json','User-Agent':'Percept-Instagram-OSINT'})
@@ -108,36 +108,13 @@ jobs:
         if: env.SKIP_RESEARCH != 'true'
         env:
           TARGET_URL: ${{ env.CANONICAL_URL }}
+          IG_COOKIES_TXT: ${{ secrets.IG_COOKIES_TXT }}
         run: python scripts/instagram_fallback.py "$TARGET_URL" --output osint-output
       - name: Transcribe and translate speech into English
         if: env.SKIP_RESEARCH != 'true'
         run: |
           python -m pip install --disable-pip-version-check faster-whisper
-          python - <<'PY'
-          import glob,json
-          # Compatibility with PyAV versions whose av.open lacks metadata_errors.
-          import av
-          _av_open=av.open
-          def _compatible_open(*args,**kwargs):
-              kwargs.pop('metadata_errors',None)
-              return _av_open(*args,**kwargs)
-          av.open=_compatible_open
-          from faster_whisper import WhisperModel
-          files=glob.glob('osint-output/**/*.mp4',recursive=True) + glob.glob('osint-output/**/*.mkv',recursive=True)
-          if not files:
-              print('No video file: no audio transcription')
-          else:
-              model=WhisperModel('small',device='cpu',compute_type='int8')
-              seg,info=model.transcribe(files[0],task='transcribe',beam_size=1,vad_filter=True)
-              original=[{'start':s.start,'end':s.end,'text':s.text.strip()} for s in seg]
-              english=original
-              if info.language!='en':
-                  seg,_=model.transcribe(files[0],task='translate',language=info.language,beam_size=1,vad_filter=True)
-                  english=[{'start':s.start,'end':s.end,'text':s.text.strip()} for s in seg]
-              transcript={'language':info.language,'original_segments':original,'english_segments':english,'english_text':' '.join(s['text'] for s in english)}
-              with open('osint-output/transcript.json','w') as f: json.dump(transcript,f,ensure_ascii=False,indent=2)
-              with open('osint-output/english.txt','w') as f: f.write(transcript['english_text'])
-          PY
+          python scripts/instagram_translate.py osint-output
       - name: Generate readable report
         if: always()
         run: |
@@ -153,13 +130,16 @@ jobs:
           m=result.get('metadata') or {}
           t={}
           if os.path.isfile(base+'/transcript.json'): t=json.load(open(base+'/transcript.json'))
-          report={'source_url':result.get('source_url'),'status':result.get('status'),'uploader':m.get('uploader'),'caption_or_title':m.get('title'),'media_type':m.get('type'),'duration':m.get('duration'),'detected_language':t.get('language'),'english_transcript':t.get('english_text'),'original_segments':t.get('original_segments',[])}
+          retrieval={}
+          if os.path.isfile(base+'/retrieval.json'): retrieval=json.load(open(base+'/retrieval.json'))
+          verified=bool(retrieval.get('status')=='SUCCESS' and t.get('english_text','').strip())
+          report={'source_url':result.get('source_url'),'status':'SUCCESS' if verified else 'FAILED','uploader':m.get('uploader'),'caption_or_title':m.get('title'),'media_type':m.get('type'),'duration':m.get('duration'),'detected_language':t.get('language'),'english_transcript':t.get('english_text'),'original_segments':t.get('original_segments',[])}
           with open(base+'/report.json','w') as f: json.dump(report,f,ensure_ascii=False,indent=2)
           with open(base+'/report.md','w') as f:
               f.write('# Percept Instagram OSINT\n\n')
               for key,val in report.items():
                   if key!='original_segments': f.write(f'**{key}:** {val if val is not None else "Not available"}\n\n')
-          print('Report generated; retrieval status:',result.get('status'))
+          print('Report generated; verified retrieval and transcription:',verified)
           PY
       - name: Upload report artifacts
         if: always()
@@ -173,5 +153,6 @@ jobs:
             osint-output/report.md
             osint-output/transcript.json
             osint-output/english.txt
+            osint-output/transcript.md
           retention-days: 30
           if-no-files-found: warn
